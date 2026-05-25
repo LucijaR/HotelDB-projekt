@@ -1,0 +1,531 @@
+import { useState, useMemo } from "react";
+import {
+  Plus,
+  Search,
+  Edit2,
+  Trash2,
+  Calendar,
+  Users,
+  Clock,
+  Home,
+  X,
+  Check,
+} from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { format } from "date-fns";
+
+// Types
+interface Booking {
+  id: string;
+  guestName: string;
+  roomType: "Suite" | "Deluxe" | "Standard";
+  checkIn: string;
+  checkOut: string;
+  status: "Confirmed" | "Pending";
+}
+
+// Initial mock data
+const initialBookings: Booking[] = [
+  {
+    id: "1",
+    guestName: "Sarah Anderson",
+    roomType: "Suite",
+    checkIn: "2024-02-15",
+    checkOut: "2024-02-20",
+    status: "Confirmed",
+  },
+  {
+    id: "2",
+    guestName: "Michael Chen",
+    roomType: "Deluxe",
+    checkIn: "2024-02-18",
+    checkOut: "2024-02-22",
+    status: "Pending",
+  },
+  {
+    id: "3",
+    guestName: "Emily Rodriguez",
+    roomType: "Standard",
+    checkIn: "2024-02-20",
+    checkOut: "2024-02-25",
+    status: "Confirmed",
+  },
+];
+
+export default function App() {
+  const [bookings, setBookings] = useState<Booking[]>(initialBookings);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    guestName: "",
+    roomType: "Standard" as Booking["roomType"],
+    checkIn: "",
+    checkOut: "",
+    status: "Pending" as Booking["status"],
+  });
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    const total = bookings.length;
+    const confirmed = bookings.filter((b) => b.status === "Confirmed").length;
+    const pending = bookings.filter((b) => b.status === "Pending").length;
+    const availableRooms = 50 - total; // Assume 50 total rooms
+
+    return { total, confirmed, pending, availableRooms };
+  }, [bookings]);
+
+  // Filter bookings
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((booking) => {
+      const matchesSearch = booking.guestName
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesStatus =
+        statusFilter === "All" || booking.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [bookings, searchQuery, statusFilter]);
+
+  // Form handlers
+  const resetForm = () => {
+    setFormData({
+      guestName: "",
+      roomType: "Standard",
+      checkIn: "",
+      checkOut: "",
+      status: "Pending",
+    });
+    setEditingBooking(null);
+  };
+
+  const handleOpenModal = () => {
+    resetForm();
+    setIsModalOpen(true);
+  };
+
+  const handleEditBooking = (booking: Booking) => {
+    setFormData({
+      guestName: booking.guestName,
+      roomType: booking.roomType,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
+      status: booking.status,
+    });
+    setEditingBooking(booking);
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (editingBooking) {
+      // Update existing booking
+      setBookings((prev) =>
+        prev.map((booking) =>
+          booking.id === editingBooking.id
+            ? { ...booking, ...formData }
+            : booking
+        )
+      );
+    } else {
+      // Create new booking
+      const newBooking: Booking = {
+        id: Date.now().toString(),
+        ...formData,
+      };
+      setBookings((prev) => [...prev, newBooking]);
+    }
+
+    setIsModalOpen(false);
+    resetForm();
+  };
+
+  const handleDeleteBooking = (id: string) => {
+    setBookings((prev) => prev.filter((booking) => booking.id !== id));
+  };
+
+  return (
+    <div className="min-h-screen bg-background font-[family-name:var(--font-family)]">
+      {/* Header */}
+      <header className="bg-card border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+                <Home className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-foreground">
+                  Hotel Booking Management
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Manage reservations and room bookings
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleOpenModal}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Booking
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <StatCard
+            icon={<Calendar className="w-5 h-5" />}
+            label="Total Bookings"
+            value={stats.total}
+            bgColor="bg-blue-50"
+            iconColor="text-blue-600"
+          />
+          <StatCard
+            icon={<Check className="w-5 h-5" />}
+            label="Confirmed"
+            value={stats.confirmed}
+            bgColor="bg-emerald-50"
+            iconColor="text-emerald-600"
+          />
+          <StatCard
+            icon={<Clock className="w-5 h-5" />}
+            label="Pending"
+            value={stats.pending}
+            bgColor="bg-amber-50"
+            iconColor="text-amber-600"
+          />
+          <StatCard
+            icon={<Users className="w-5 h-5" />}
+            label="Available Rooms"
+            value={stats.availableRooms}
+            bgColor="bg-slate-50"
+            iconColor="text-slate-600"
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="bg-card rounded-xl border border-border p-6 mb-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by guest name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="md:w-48">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground appearance-none cursor-pointer"
+              >
+                <option value="All">All Status</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Pending">Pending</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Bookings Table */}
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Guest Name
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Room Type
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Check-in
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Check-out
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Status
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredBookings.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <Calendar className="w-12 h-12 text-muted-foreground/40" />
+                        <p className="text-muted-foreground">
+                          No bookings found
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBookings.map((booking) => (
+                    <tr
+                      key={booking.id}
+                      className="hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="px-6 py-4 text-sm font-medium text-foreground">
+                        {booking.guestName}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-foreground">
+                        {booking.roomType}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        {format(new Date(booking.checkIn), "MMM dd, yyyy")}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        {format(new Date(booking.checkOut), "MMM dd, yyyy")}
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={booking.status} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEditBooking(booking)}
+                            className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                            title="Edit booking"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBooking(booking.id)}
+                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                            title="Delete booking"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      {/* Add/Edit Booking Modal */}
+      <Dialog.Root open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl shadow-2xl border border-border max-w-lg w-full max-h-[90vh] overflow-y-auto z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <Dialog.Title className="text-xl font-semibold text-foreground">
+                  {editingBooking ? "Edit Booking" : "Add New Booking"}
+                </Dialog.Title>
+                <Dialog.Close className="p-2 hover:bg-muted rounded-lg transition-colors">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </Dialog.Close>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {/* Guest Name */}
+                <div>
+                  <label
+                    htmlFor="guestName"
+                    className="block text-sm font-medium text-foreground mb-2"
+                  >
+                    Guest Name
+                  </label>
+                  <input
+                    id="guestName"
+                    type="text"
+                    required
+                    value={formData.guestName}
+                    onChange={(e) =>
+                      setFormData({ ...formData, guestName: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                    placeholder="Enter guest name"
+                  />
+                </div>
+
+                {/* Room Type */}
+                <div>
+                  <label
+                    htmlFor="roomType"
+                    className="block text-sm font-medium text-foreground mb-2"
+                  >
+                    Room Type
+                  </label>
+                  <select
+                    id="roomType"
+                    required
+                    value={formData.roomType}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        roomType: e.target.value as Booking["roomType"],
+                      })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground appearance-none cursor-pointer"
+                  >
+                    <option value="Standard">Standard</option>
+                    <option value="Deluxe">Deluxe</option>
+                    <option value="Suite">Suite</option>
+                  </select>
+                </div>
+
+                {/* Check-in Date */}
+                <div>
+                  <label
+                    htmlFor="checkIn"
+                    className="block text-sm font-medium text-foreground mb-2"
+                  >
+                    Check-in Date
+                  </label>
+                  <input
+                    id="checkIn"
+                    type="date"
+                    required
+                    value={formData.checkIn}
+                    onChange={(e) =>
+                      setFormData({ ...formData, checkIn: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                  />
+                </div>
+
+                {/* Check-out Date */}
+                <div>
+                  <label
+                    htmlFor="checkOut"
+                    className="block text-sm font-medium text-foreground mb-2"
+                  >
+                    Check-out Date
+                  </label>
+                  <input
+                    id="checkOut"
+                    type="date"
+                    required
+                    value={formData.checkOut}
+                    onChange={(e) =>
+                      setFormData({ ...formData, checkOut: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                  />
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label
+                    htmlFor="status"
+                    className="block text-sm font-medium text-foreground mb-2"
+                  >
+                    Status
+                  </label>
+                  <select
+                    id="status"
+                    required
+                    value={formData.status}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        status: e.target.value as Booking["status"],
+                      })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground appearance-none cursor-pointer"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Confirmed">Confirmed</option>
+                  </select>
+                </div>
+
+                {/* Form Actions */}
+                <div className="flex gap-3 pt-4">
+                  <Dialog.Close asChild>
+                    <button
+                      type="button"
+                      className="flex-1 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </Dialog.Close>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm"
+                  >
+                    {editingBooking ? "Update Booking" : "Add Booking"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </div>
+  );
+}
+
+// Components
+interface StatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  bgColor: string;
+  iconColor: string;
+}
+
+function StatCard({ icon, label, value, bgColor, iconColor }: StatCardProps) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-6">
+      <div className="flex items-center gap-4">
+        <div className={`w-12 h-12 ${bgColor} rounded-lg flex items-center justify-center ${iconColor}`}>
+          {icon}
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground font-medium">{label}</p>
+          <p className="text-2xl font-semibold text-foreground mt-1">
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface StatusBadgeProps {
+  status: "Confirmed" | "Pending";
+}
+
+function StatusBadge({ status }: StatusBadgeProps) {
+  if (status === "Confirmed") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+        Confirmed
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+      Pending
+    </span>
+  );
+}
