@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 
 const url = 'mongodb://localhost:27017';
 const dbName = 'HotelDB';
@@ -31,11 +31,16 @@ async function main() {
     
         const kolekcijaSobaDodaci = db.collection('SobaDodaci');
 
+        const dorucak = await kolekcijaDodaci.findOne({ naziv_stavke: "Doručak" });
+        const parking = await kolekcijaDodaci.findOne({ naziv_stavke: "Parking" });
+        const bazen = await kolekcijaDodaci.findOne({ naziv_stavke: "Bazen" });
+
         const sobaDodaciPodaci = [
-            { id_sobe: "101", id_stavke: "Doručak" },
-            { id_sobe: "101", id_stavke: "Parking" },
-            { id_sobe: "202", id_stavke: "Bazen" },
+            { id_sobe: new ObjectId("6a0cacc623b7cfb9819beb84"), id_stavke: dorucak._id },
+            { id_sobe: new ObjectId("6a0cacc623b7cfb9819beb84"), id_stavke: parking._id },
+            { id_sobe: new ObjectId("6a0cacc623b7cfb9819beb85"), id_stavke: bazen._id    },
         ];
+
 
         await kolekcijaSobaDodaci.insertMany(sobaDodaciPodaci);
         console.log("SobaDodaci ubaceni!");
