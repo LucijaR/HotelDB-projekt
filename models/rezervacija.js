@@ -11,3 +11,4 @@ const rezervacijaSchema = new mongoose.Schema({
 }, { collection: 'Rezervacije' });
 
 module.exports = mongoose.model('Rezervacija', rezervacijaSchema);
+

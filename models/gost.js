@@ -4,6 +4,7 @@ const gostSchema = new mongoose.Schema({
   ime: String,
   prezime: String,
   email: String,
+  broj_telefona: String,
   id_mjesta: mongoose.Schema.Types.ObjectId,
 }, { collection: 'Gosti' });
 

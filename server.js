@@ -10,7 +10,7 @@ app.use(express.json());
 const PORT = 5000;
 
 // PostgreSQL konekcija (čita postavke iz .env)
-const pool = new Pool({
+/*const pool = new Pool({
   user: process.env.PG_USER || process.env.PGUSER || 'postgres',
   host: process.env.PG_HOST || 'localhost',
   database: process.env.PG_DATABASE || process.env.PGDATABASE || 'postgres',
@@ -29,11 +29,11 @@ pool.connect((err, client, release) => {
     console.log('Uspješno spojeni na PostgreSQL bazu!');
     release();
 });
-
+*/
 // MongoDB konekcija
-// mongoose.connect(process.env.MONGODB_URI)
-//     .then(() => console.log('Uspješno spojeni na MongoDB bazu!'))
-//     .catch(err => console.error('Greška pri spajanju na MongoDB bazu:', err));
+mongoose.connect(process.env.MONGODB_URI)
+     .then(() => console.log('Uspješno spojeni na MongoDB bazu!'))
+     .catch(err => console.error('Greška pri spajanju na MongoDB bazu:', err));
 
 // ==================== REZERVACIJE ====================
 
@@ -103,6 +103,8 @@ app.get('/api/rezervacije', async (req, res) => {
             check_in: 1,
             check_out: 1,
             status: 1,
+            email: { $ifNull: ['$gost.email', ''] },
+            broj_telefona: { $ifNull: ['$gost.broj_telefona', ''] },
           }
         }
       ]);
@@ -122,7 +124,6 @@ app.post('/api/rezervacije', async (req, res) => {
     if (process.env.DB_TYPE === 'postgres') {
       const { guestName, roomType, checkIn, checkOut, status, email, brojTelefona } = req.body;
       
-      // 1. Pronađi ili kreiraj gosta
       let gost = await pool.query(
         `SELECT id_gosta FROM "Gosti" WHERE email = $1`, [email]
       );
@@ -140,7 +141,6 @@ app.post('/api/rezervacije', async (req, res) => {
       
       const id_gosta = gost.rows[0].id_gosta;
 
-      // 2. Pronađi sobu po tipu
       const soba = await pool.query(`
         SELECT s.id_sobe FROM "Sobe" s
         JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
@@ -154,7 +154,6 @@ app.post('/api/rezervacije', async (req, res) => {
 
       const id_sobe = soba.rows[0].id_sobe;
 
-      // 3. Kreiraj rezervaciju
       const { rows } = await pool.query(`
         INSERT INTO "Rezervacije" (id_gosta, id_sobe, check_in, check_out, status)
         VALUES ($1, $2, $3, $4, $5)
@@ -162,9 +161,55 @@ app.post('/api/rezervacije', async (req, res) => {
       `, [id_gosta, id_sobe, checkIn, checkOut, status === 'Confirmed' ? 'potvrdena' : 'Na čekanju']);
 
       res.status(201).json({ id: rows[0].id.toString() });
+
+    } else if (process.env.DB_TYPE === 'mongo') {
+      const Rezervacija = require('./models/Rezervacija');
+      const Gost = require('./models/Gost');
+      const Soba = require('./models/Soba');
+      const VrstaSobe = require('./models/VrstaSobe');
+
+      const { guestName, roomType, checkIn, checkOut, status, email, brojTelefona } = req.body;
+
+      let gost = await Gost.findOne({ email });
+      console.log('Gost pronađen:', gost);
+
+      if (!gost) {
+        const dijelovi = guestName.trim().split(' ');
+        gost = await Gost.create({
+          ime: dijelovi[0],
+          prezime: dijelovi.slice(1).join(' ') || '',
+          email,
+          broj_telefona: brojTelefona
+        });
+        console.log('Gost kreiran:', gost);
+      }
+
+      const vrstaSobe = await VrstaSobe.findOne({ naziv: roomType });
+      console.log('VrstaSobe pronađena:', vrstaSobe);
+      if (!vrstaSobe) {
+        return res.status(400).json({ greška: `Vrsta sobe '${roomType}' ne postoji` });
+      }
+
+      const soba = await Soba.findOne({ vrsta_sobe_id: vrstaSobe._id, status: 'Slobodna' });
+      console.log('Soba pronađena:', soba);
+      if (!soba) {
+        return res.status(400).json({ greška: `Nema slobodnih soba tipa ${roomType}` });
+      }
+
+      const rezervacija = await Rezervacija.create({
+        id_gosta: gost._id,
+        id_sobe: soba._id,
+        check_in: new Date(checkIn),
+        check_out: new Date(checkOut),
+        status: status === 'Confirmed' ? 'potvrdena' : 'Na čekanju',
+        ukupna_cijena: 0
+      });
+      console.log('Rezervacija kreirana:', rezervacija);
+
+      res.status(201).json({ id: rezervacija._id.toString() });
     }
   } catch (err) {
-    console.error(err.message);
+    console.error('ERROR:', err.message);
     res.status(500).send('Greška kod kreiranja rezervacije');
   }
 });
@@ -258,7 +303,7 @@ app.get('/api/stats', async (req, res) => {
 
       stats = {
         totalBookings: await Rezervacija.countDocuments(),
-        confirmed: await Rezervacija.countDocuments({ status: 'Potvrđena' }),
+        confirmed: await Rezervacija.countDocuments({ status: 'potvrdena' }),
         pending: await Rezervacija.countDocuments({ status: 'Na čekanju' }),
         availableRooms: await Soba.countDocuments({ status: 'Slobodna' }),
       };
