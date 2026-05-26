@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -24,36 +24,34 @@ interface Booking {
   status: "Confirmed" | "Pending";
 }
 
-// Initial mock data
-const initialBookings: Booking[] = [
-  {
-    id: "1",
-    guestName: "Sarah Anderson",
-    roomType: "Suite",
-    checkIn: "2024-02-15",
-    checkOut: "2024-02-20",
-    status: "Confirmed",
-  },
-  {
-    id: "2",
-    guestName: "Michael Chen",
-    roomType: "Deluxe",
-    checkIn: "2024-02-18",
-    checkOut: "2024-02-22",
-    status: "Pending",
-  },
-  {
-    id: "3",
-    guestName: "Emily Rodriguez",
-    roomType: "Standard",
-    checkIn: "2024-02-20",
-    checkOut: "2024-02-25",
-    status: "Confirmed",
-  },
-];
 
 export default function App() {
-  const [bookings, setBookings] = useState<Booking[]>(initialBookings);
+  const [bookings, setBookings] = useState<Booking[]>();
+  useEffect(() => {
+    fetch("http://localhost:5000/api/rezervacije")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!Array.isArray(data)) {
+          console.error("Backend nije vratio niz:", data);
+          return;
+        }
+
+        const mapiraneRezervacije: Booking[] = data.map((res: any) => ({
+          id: res.id ? res.id.toString() : Date.now().toString(),
+          guestName: res.guest_name || "Nepoznati Gost",
+          roomType: (res.room_type === "Suite"
+            ? "Suite"
+            : res.room_type === "Deluxe"
+            ? "Deluxe"
+            : "Standard") as Booking["roomType"],
+          checkIn: res.check_in ? res.check_in.split('T')[0] : "2026-05-26",
+          checkOut: res.check_out ? res.check_out.split('T')[0] : "2026-05-30",
+          status: (res.status === "potvrdena" ? "Confirmed" : "Pending") as Booking["status"],
+        }));
+        setBookings(mapiraneRezervacije);
+      })
+      .catch((error) => console.error("Greška pri dohvaćanju s backenda:", error));
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,9 +68,10 @@ export default function App() {
 
   // Calculate stats
   const stats = useMemo(() => {
-    const total = bookings.length;
-    const confirmed = bookings.filter((b) => b.status === "Confirmed").length;
-    const pending = bookings.filter((b) => b.status === "Pending").length;
+    const sigurniBookings = bookings || [];
+    const total = sigurniBookings.length;
+    const confirmed = sigurniBookings.filter((b) => b && b.status === "Confirmed").length;
+    const pending = sigurniBookings.filter((b) => b && b.status === "Pending").length;
     const availableRooms = 50 - total; // Assume 50 total rooms
 
     return { total, confirmed, pending, availableRooms };
@@ -80,7 +79,9 @@ export default function App() {
 
   // Filter bookings
   const filteredBookings = useMemo(() => {
-    return bookings.filter((booking) => {
+    const sigurniBookings = bookings || [];
+    return sigurniBookings.filter((booking) => {
+      if (!booking || !booking.guestName) return false;
       const matchesSearch = booking.guestName
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
