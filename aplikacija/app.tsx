@@ -22,6 +22,8 @@ interface Booking {
   checkIn: string;
   checkOut: string;
   status: "Confirmed" | "Pending";
+  email?: string;
+  brojTelefona?: string;
 }
 
 
@@ -47,6 +49,8 @@ export default function App() {
           checkIn: res.check_in ? res.check_in.split('T')[0] : "2026-05-26",
           checkOut: res.check_out ? res.check_out.split('T')[0] : "2026-05-30",
           status: (res.status === "potvrdena" ? "Confirmed" : "Pending") as Booking["status"],
+          email: res.email || "",
+          brojTelefona: res.broj_telefona || "",
         }));
         setBookings(mapiraneRezervacije);
       })
@@ -56,6 +60,7 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -150,6 +155,8 @@ export default function App() {
           checkIn: formData.checkIn,
           checkOut: formData.checkOut,
           status: formData.status,
+          email: formData.email,
+          brojTelefona: formData.brojTelefona,
         };
 
         setBookings((prev) => [kompletnaRezervacija, ...(prev ?? [])]);
@@ -164,46 +171,74 @@ export default function App() {
     }
   };
 
-  /*const handleEditBooking = (booking: Booking) => {
-    setFormData({
-      guestName: booking.guestName,
-      roomType: booking.roomType,
-      checkIn: booking.checkIn,
-      checkOut: booking.checkOut,
-      status: booking.status,
-    });
-    setEditingBooking(booking);
-    setIsModalOpen(true);
-  };*/
+ const handleOpenEditModal = (booking: Booking) => {
+  setFormData({
+    guestName: booking.guestName,
+    roomType: booking.roomType,
+    checkIn: booking.checkIn,
+    checkOut: booking.checkOut,
+    status: booking.status,
+    email: booking.email || "",
+    brojTelefona: booking.brojTelefona || "",
+  });
+  setEditingBooking(booking);
+  setIsModalOpen(true);
+};
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (editingBooking) {
-      // Update existing booking
+  if (!editingBooking) {
+    // Ako nema editingBooking, pozovi add
+    await handleAddBooking();
+    return;
+  }
+
+  // UPDATE
+  try {
+    const response = await fetch(
+      `http://localhost:5000/api/rezervacije/${editingBooking.id}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      }
+    );
+    if (response.ok) {
       setBookings((prev) =>
-        prev.map((booking) =>
-          booking.id === editingBooking.id
-            ? { ...booking, ...formData }
-            : booking
-        )
+        prev?.map((b) =>
+          b.id === editingBooking.id ? { ...b, ...formData } : b
+        ) ?? []
       );
+      alert("Rezervacija uspješno ažurirana!");
     } else {
-      // Create new booking
-      const newBooking: Booking = {
-        id: Date.now().toString(),
-        ...formData,
-      };
-      setBookings((prev) => [...prev, newBooking]);
+      alert("Greška pri ažuriranju.");
     }
+  } catch (error) {
+    console.error(error);
+  }
 
-    setIsModalOpen(false);
-    resetForm();
-  };
-
-  const handleDeleteBooking = (id: string) => {
-    setBookings((prev) => prev.filter((booking) => booking.id !== id));
-  };
+  setIsModalOpen(false);
+  resetForm();
+};
+//brisanje rezervacije
+const handleDeleteBooking = async () => {
+  if (!deletingId) return;
+  try {
+    const response = await fetch(`http://localhost:5000/api/rezervacije/${deletingId}`, {
+      method: "DELETE",
+    });
+    if (response.ok) {
+      setBookings((prev) => prev?.filter((b) => b.id !== deletingId) ?? []);
+    } else {
+      alert("Greška prilikom brisanja rezervacije na backendu.");
+    }
+  } catch (error) {
+    console.error("Greška pri brisanju rezervacije:", error);
+  } finally {
+    setDeletingId(null);
+  }
+};
 
   return (
     <div className="min-h-screen bg-background font-[family-name:var(--font-family)]">
@@ -360,14 +395,14 @@ export default function App() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button
-              
+                            onClick={() =>handleOpenEditModal(booking)}
                             className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
                             title="Edit booking"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteBooking(booking.id)}
+                              onClick={() => setDeletingId(booking.id)}
                             className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
                             title="Delete booking"
                           >
@@ -559,10 +594,6 @@ export default function App() {
                     </button>
                   </Dialog.Close>
                 <button 
-                onClick={(e) => { 
-                  e.preventDefault(); 
-                  handleAddBooking(); 
-                }}
                 type="submit"
                 className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm"
               >
@@ -574,6 +605,31 @@ export default function App() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {/* Delete Confirmation Modal */}
+<Dialog.Root open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+  <Dialog.Portal>
+    <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" />
+    <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl shadow-2xl border border-border w-full max-w-sm z-50 p-6">
+      <Dialog.Description className="text-sm text-muted-foreground mb-6">
+        Jeste li sigurni da želite obrisati ovu rezervaciju? Ova radnja se ne može poništiti.
+      </Dialog.Description>
+      <div className="flex gap-3">
+        <Dialog.Close asChild>
+          <button className="flex-1 px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors font-medium">
+            Odustani
+          </button>
+        </Dialog.Close>
+        <button
+          onClick={handleDeleteBooking}
+          className="flex-1 px-4 py-2.5 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors font-medium"
+        >
+          Obriši
+        </button>
+      </div>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
     </div>
   );
 }

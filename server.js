@@ -9,13 +9,17 @@ app.use(cors());
 app.use(express.json());
 const PORT = 5000;
 
-// PostgreSQL konekcija
+// PostgreSQL konekcija (čita postavke iz .env)
 const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'postgres',
-    password: process.env.DB_PASSWORD,
-    port: 5432,
+  user: process.env.PG_USER || process.env.PGUSER || 'postgres',
+  host: process.env.PG_HOST || 'localhost',
+  database: process.env.PG_DATABASE || process.env.PGDATABASE || 'postgres',
+  password: process.env.DB_PASSWORD || process.env.PG_PASSWORD || '',
+  port: process.env.PG_PORT ? parseInt(process.env.PG_PORT, 10) : 5432,
+  // opcionalne tunable postavke
+  max: process.env.PG_MAX ? parseInt(process.env.PG_MAX, 10) : 10,
+  idleTimeoutMillis: process.env.PG_IDLE_TIMEOUT_MS ? parseInt(process.env.PG_IDLE_TIMEOUT_MS, 10) : 30000,
+  connectionTimeoutMillis: process.env.PG_CONN_TIMEOUT_MS ? parseInt(process.env.PG_CONN_TIMEOUT_MS, 10) : 0,
 });
 
 pool.connect((err, client, release) => {
@@ -39,15 +43,17 @@ app.get('/api/rezervacije', async (req, res) => {
       const { rows } = await pool.query(`
         SELECT
           r.id_rezervacije AS id,
-          CONCAT(g.ime, ' ', g.prezime) AS guest_name,
-          vs.naziv AS room_type,
+          COALESCE(CONCAT(g.ime, ' ', g.prezime), 'Nepoznati Gost') AS guest_name,
+          COALESCE(vs.naziv, 'Standard') AS room_type,
           r.check_in,
           r.check_out,
-          r.status
+          r.status,
+          COALESCE(g.email, '') AS email,
+          COALESCE(g.broj_telefona, '') AS broj_telefona
         FROM "Rezervacije" r
-        JOIN "Gosti" g ON r.id_gosta = g.id_gosta
-        JOIN "Sobe" s ON r.id_sobe = s.id_sobe
-        JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
+        LEFT JOIN "Gosti" g ON r.id_gosta = g.id_gosta
+        LEFT JOIN "Sobe" s ON r.id_sobe = s.id_sobe
+        LEFT JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
         ORDER BY r.check_in DESC
       `);
       res.json(rows);
@@ -110,21 +116,52 @@ app.get('/api/rezervacije', async (req, res) => {
 });
 
 app.post('/api/rezervacije', async (req, res) => {
+  console.log('DB_TYPE:', process.env.DB_TYPE);
+  console.log('Body:', req.body);
   try {
     if (process.env.DB_TYPE === 'postgres') {
-      const { id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status } = req.body;
-      const { rows } = await pool.query(`
-        INSERT INTO "Rezervacije" (id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *
-      `, [id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status]);
-      res.status(201).json(rows[0]);
+      const { guestName, roomType, checkIn, checkOut, status, email, brojTelefona } = req.body;
+      
+      // 1. Pronađi ili kreiraj gosta
+      let gost = await pool.query(
+        `SELECT id_gosta FROM "Gosti" WHERE email = $1`, [email]
+      );
+      
+      if (gost.rows.length === 0) {
+        const dijelovi = guestName.split(' ');
+        const ime = dijelovi[0];
+        const prezime = dijelovi.slice(1).join(' ') || '';
+        gost = await pool.query(
+          `INSERT INTO "Gosti" (ime, prezime, email, broj_telefona) 
+           VALUES ($1, $2, $3, $4) RETURNING id_gosta`,
+          [ime, prezime, email, brojTelefona]
+        );
+      }
+      
+      const id_gosta = gost.rows[0].id_gosta;
 
-    } else if (process.env.DB_TYPE === 'mongo') {
-      const Rezervacija = require('./models/Rezervacija');
-      const nova = new Rezervacija(req.body);
-      await nova.save();
-      res.status(201).json(nova);
+      // 2. Pronađi sobu po tipu
+      const soba = await pool.query(`
+        SELECT s.id_sobe FROM "Sobe" s
+        JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
+        WHERE vs.naziv = $1 AND s.status = 'Slobodna'
+        LIMIT 1
+      `, [roomType]);
+
+      if (soba.rows.length === 0) {
+        return res.status(400).json({ greška: `Nema slobodnih soba tipa ${roomType}` });
+      }
+
+      const id_sobe = soba.rows[0].id_sobe;
+
+      // 3. Kreiraj rezervaciju
+      const { rows } = await pool.query(`
+        INSERT INTO "Rezervacije" (id_gosta, id_sobe, check_in, check_out, status)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id_rezervacije AS id
+      `, [id_gosta, id_sobe, checkIn, checkOut, status === 'Confirmed' ? 'potvrdena' : 'Na čekanju']);
+
+      res.status(201).json({ id: rows[0].id.toString() });
     }
   } catch (err) {
     console.error(err.message);
@@ -133,22 +170,45 @@ app.post('/api/rezervacije', async (req, res) => {
 });
 
 app.put('/api/rezervacije/:id', async (req, res) => {
+  console.log('PUT id:', req.params.id);
+  console.log('PUT body:', req.body);
+
   try {
     if (process.env.DB_TYPE === 'postgres') {
       const { id } = req.params;
-      const { id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status } = req.body;
+      const { guestName, checkIn, checkOut, status, roomType } = req.body;
+
+      // 1. Ažuriraj ime gosta
+      const dijelovi = (guestName || '').trim().split(' ');
+      const ime = dijelovi[0] || '';
+      const prezime = dijelovi.slice(1).join(' ') || '';
+
+      await pool.query(`
+        UPDATE "Gosti" g
+        SET ime = $1, prezime = $2
+        FROM "Rezervacije" r
+        WHERE r.id_rezervacije = $3 AND r.id_gosta = g.id_gosta
+      `, [ime, prezime, id]);
+
+      // 2. Pronađi sobu po tipu
+      const soba = await pool.query(`
+        SELECT s.id_sobe FROM "Sobe" s
+        JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
+        WHERE vs.naziv = $1
+        LIMIT 1
+      `, [roomType]);
+
+      const id_sobe = soba.rows[0]?.id_sobe;
+
+      // 3. Ažuriraj rezervaciju
       const { rows } = await pool.query(`
         UPDATE "Rezervacije"
-        SET id_gosta=$1, id_sobe=$2, id_placanja=$3, check_in=$4, check_out=$5, ukupna_cijena=$6, status=$7
-        WHERE id_rezervacije=$8
+        SET check_in=$1, check_out=$2, status=$3, id_sobe=$4
+        WHERE id_rezervacije=$5
         RETURNING *
-      `, [id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status, id]);
-      res.json(rows[0]);
+      `, [checkIn, checkOut, status === 'Confirmed' ? 'potvrdena' : 'Na čekanju', id_sobe, id]);
 
-    } else if (process.env.DB_TYPE === 'mongo') {
-      const Rezervacija = require('./models/Rezervacija');
-      const updated = await Rezervacija.findByIdAndUpdate(req.params.id, req.body, { new: true });
-      res.json(updated);
+      res.json(rows[0]);
     }
   } catch (err) {
     console.error(err.message);
