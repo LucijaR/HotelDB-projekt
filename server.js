@@ -51,6 +51,56 @@ app.get('/api/rezervacije', async (req, res) => {
   }
 });
 
+// OPERACIJA: CREATE - Dodavanje novog gosta i njegove rezervacije u bazu podataka
+app.post('/api/rezervacije', async (req, res) => {
+  const { guestName, roomType, checkIn, checkOut, status, email, brojTelefona } = req.body;
+
+  try {
+    const [ime, ...ostatakPrezimena] = guestName.trim().split(" ");
+    const prezime = ostatakPrezimena.join(" ") || "Prezime"; 
+
+    const nasumicniOib = Math.floor(10000000000 + Math.random() * 90000000000).toString();
+
+    const noviGost = await pool.query(
+      `INSERT INTO Gosti (ime, prezime, email, jmbg_oib, broj_telefona, datum_registracije, id_mjesta) 
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 1) 
+       RETURNING id_gosta`,
+      [ime, prezime, email, nasumicniOib, brojTelefona]
+    );
+
+    const idGosta = noviGost.rows[0].id_gosta;
+
+    let idSobe = 1; 
+    if (roomType === "Suite") idSobe = 3;
+    else if (roomType === "Deluxe" || roomType === "Standard") idSobe = 2;
+
+    const novoPlacanje = await pool.query(
+      `INSERT INTO Placanja (iznos, nacin_placanja, status) 
+       VALUES (150.00, 'kartica', 'neplaceno') 
+       RETURNING id_placanja`
+    );
+    const idPlacanja = pool.rows ? novoPlacanje.rows[0].id_placanja : novoPlacanje.rows[0].id_placanja;
+
+    const dbStatus = status === "Confirmed" ? "potvrdena" : "cekiranje";
+
+    const novaRezervacija = await pool.query(
+      `INSERT INTO Rezervacije (id_gosta, id_sobe, id_placanja, check_in, check_out, ukupna_cijena, status) 
+       VALUES ($1, $2, $3, $4, $5, 150.00, $6) 
+       RETURNING id_rezervacije`,
+      [idGosta, idSobe, idPlacanja, checkIn, checkOut, dbStatus]
+    );
+
+    res.status(201).json({ 
+      id: novaRezervacija.rows[0].id_rezervacije.toString(),
+      message: "Rezervacija uspješno spremljena u bazu!" 
+    });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Greška na serveru kod kreiranja rezervacije");
+  }
+});
+
 app.listen(PORT, () => {
     console.log(`Backend server je upaljen na http://localhost:${PORT}`);
 });

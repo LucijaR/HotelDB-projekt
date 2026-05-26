@@ -64,6 +64,8 @@ export default function App() {
     checkIn: "",
     checkOut: "",
     status: "Pending" as Booking["status"],
+    email: "",    
+    brojTelefona: "",
   });
 
   // Calculate stats
@@ -99,6 +101,8 @@ export default function App() {
       checkIn: "",
       checkOut: "",
       status: "Pending",
+      email: "",  
+      brojTelefona: "",
     });
     setEditingBooking(null);
   };
@@ -108,7 +112,59 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  const handleEditBooking = (booking: Booking) => {
+ const handleAddBooking = async () => {
+    try {
+      console.log("Ove podatke šaljemo na backend:", {
+        guestName: formData.guestName,
+        roomType: formData.roomType,
+        checkIn: formData.checkIn,
+        checkOut: formData.checkOut,
+        status: formData.status,
+        email: formData.email,
+        brojTelefona: formData.brojTelefona
+      });
+
+      const response = await fetch("http://localhost:5000/api/rezervacije", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          guestName: formData.guestName,
+          roomType: formData.roomType,
+          checkIn: formData.checkIn,
+          checkOut: formData.checkOut,
+          status: formData.status,
+          email: formData.email,      
+          brojTelefona: formData.brojTelefona 
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        const kompletnaRezervacija: Booking = {
+          id: data.id,
+          guestName: formData.guestName,
+          roomType: formData.roomType,
+          checkIn: formData.checkIn,
+          checkOut: formData.checkOut,
+          status: formData.status,
+        };
+
+        setBookings((prev) => [kompletnaRezervacija, ...(prev ?? [])]);
+        setIsModalOpen(false); 
+        resetForm(); 
+        alert("Rezervacija s kontakt podacima uspješno dodana u PostgreSQL!");
+      } else {
+        alert("Greška prilikom spremanja rezervacije na backendu.");
+      }
+    } catch (error) {
+      console.error("Greška pri dodavanju rezervacije:", error);
+    }
+  };
+
+  /*const handleEditBooking = (booking: Booking) => {
     setFormData({
       guestName: booking.guestName,
       roomType: booking.roomType,
@@ -118,7 +174,7 @@ export default function App() {
     });
     setEditingBooking(booking);
     setIsModalOpen(true);
-  };
+  };*/
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,7 +360,7 @@ export default function App() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleEditBooking(booking)}
+              
                             className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
                             title="Edit booking"
                           >
@@ -362,6 +418,42 @@ export default function App() {
                     }
                     className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
                     placeholder="Enter guest name"
+                  />
+                </div>
+
+                {/* Email*/}
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    value={formData.email}
+                    onChange={(e) =>
+                      setFormData({ ...formData, email: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                    placeholder="Enter guest email"
+                  />
+                </div>
+
+                {/* Broj telefona */}
+                <div>
+                  <label htmlFor="brojTelefona" className="block text-sm font-medium text-foreground mb-2">
+                    Broj telefona
+                  </label>
+                  <input
+                    id="brojTelefona"
+                    type="text"
+                    required
+                    value={formData.brojTelefona}
+                    onChange={(e) =>
+                      setFormData({ ...formData, brojTelefona: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-input-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                    placeholder="Enter phone number"
                   />
                 </div>
 
@@ -466,12 +558,16 @@ export default function App() {
                       Cancel
                     </button>
                   </Dialog.Close>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm"
-                  >
-                    {editingBooking ? "Update Booking" : "Add Booking"}
-                  </button>
+                <button 
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  handleAddBooking(); 
+                }}
+                type="submit"
+                className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium shadow-sm"
+              >
+                {editingBooking ? "Update Booking" : "Add Booking"}
+              </button>
                 </div>
               </form>
             </div>
