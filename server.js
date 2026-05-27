@@ -121,9 +121,16 @@ app.post('/api/rezervacije', async (req, res) => {
   console.log('DB_TYPE:', process.env.DB_TYPE);
   console.log('Body:', req.body);
   try {
-    if (process.env.DB_TYPE === 'postgres') {
+    
       const { guestName, roomType, checkIn, checkOut, status, email, brojTelefona } = req.body;
       
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+      if (checkOutDate <= checkInDate) {
+        return res.status(400).json({ greška: 'Check-out mora biti nakon check-in datuma' });
+      }
+
+      if (process.env.DB_TYPE === 'postgres') {
       let gost = await pool.query(
         `SELECT id_gosta FROM "Gosti" WHERE email = $1`, [email]
       );
@@ -199,8 +206,8 @@ app.post('/api/rezervacije', async (req, res) => {
       const rezervacija = await Rezervacija.create({
         id_gosta: gost._id,
         id_sobe: soba._id,
-        check_in: new Date(checkIn),
-        check_out: new Date(checkOut),
+        check_in: checkInDate,
+        check_out: checkOutDate,
         status: status === 'Confirmed' ? 'potvrdena' : 'Na čekanju',
         ukupna_cijena: 0
       });
@@ -222,6 +229,12 @@ app.put('/api/rezervacije/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { guestName, checkIn, checkOut, status, roomType } = req.body;
+
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    if (checkOutDate <= checkInDate) {
+      return res.status(400).json({ greška: 'Check-out mora biti nakon check-in datuma' });
+    }
 
     if (process.env.DB_TYPE === 'postgres') {
       const dijelovi = (guestName || '').trim().split(' ');
@@ -282,7 +295,7 @@ app.put('/api/rezervacije/:id', async (req, res) => {
           return res.status(400).json({ greška: `Vrsta sobe '${roomType}' ne postoji` });
         }
 
-        const slobodnaSoba = await Soba.findOne({ vrsta_sobe_id: vrstaSobe._id, status: 'Slobodna' });
+        const slobodnaSoba = await Soba.findOne({ vrsta_sobe_id: vrstaSobe._id, });
         if (!slobodnaSoba) {
           return res.status(400).json({ greška: `Nema slobodnih soba tipa ${roomType}` });
         }

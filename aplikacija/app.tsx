@@ -118,6 +118,10 @@ export default function App() {
   };
 
  const handleAddBooking = async () => {
+  if (new Date(formData.checkOut) <= new Date(formData.checkIn)) {
+    alert('Check-out mora biti nakon check-in datuma!');
+    return;
+  }
     try {
       console.log("Ove podatke šaljemo na backend:", {
         guestName: formData.guestName,
@@ -187,6 +191,11 @@ export default function App() {
 
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
+
+  if (new Date(formData.checkOut) <= new Date(formData.checkIn)) {
+    alert('Check-out mora biti nakon check-in datuma!');
+    return;
+  }
 
   if (!editingBooking) {
     // Ako nema editingBooking, pozovi add
