@@ -217,13 +217,13 @@ app.post('/api/rezervacije', async (req, res) => {
 app.put('/api/rezervacije/:id', async (req, res) => {
   console.log('PUT id:', req.params.id);
   console.log('PUT body:', req.body);
+  console.log('DB_TYPE:', process.env.DB_TYPE);
 
   try {
-    if (process.env.DB_TYPE === 'postgres') {
-      const { id } = req.params;
-      const { guestName, checkIn, checkOut, status, roomType } = req.body;
+    const { id } = req.params;
+    const { guestName, checkIn, checkOut, status, roomType } = req.body;
 
-      // 1. Ažuriraj ime gosta
+    if (process.env.DB_TYPE === 'postgres') {
       const dijelovi = (guestName || '').trim().split(' ');
       const ime = dijelovi[0] || '';
       const prezime = dijelovi.slice(1).join(' ') || '';
@@ -235,7 +235,6 @@ app.put('/api/rezervacije/:id', async (req, res) => {
         WHERE r.id_rezervacije = $3 AND r.id_gosta = g.id_gosta
       `, [ime, prezime, id]);
 
-      // 2. Pronađi sobu po tipu
       const soba = await pool.query(`
         SELECT s.id_sobe FROM "Sobe" s
         JOIN "VrstaSobe" vs ON s.vrsta_sobe_id = vs.vrsta_sobe_id
@@ -245,7 +244,6 @@ app.put('/api/rezervacije/:id', async (req, res) => {
 
       const id_sobe = soba.rows[0]?.id_sobe;
 
-      // 3. Ažuriraj rezervaciju
       const { rows } = await pool.query(`
         UPDATE "Rezervacije"
         SET check_in=$1, check_out=$2, status=$3, id_sobe=$4
@@ -253,10 +251,60 @@ app.put('/api/rezervacije/:id', async (req, res) => {
         RETURNING *
       `, [checkIn, checkOut, status === 'Confirmed' ? 'potvrdena' : 'Na čekanju', id_sobe, id]);
 
-      res.json(rows[0]);
+      return res.json(rows[0]);
+
+    } else if (process.env.DB_TYPE === 'mongo') {
+      const Rezervacija = require('./models/Rezervacija');
+      const Gost = require('./models/Gost');
+      const Soba = require('./models/Soba');
+      const VrstaSobe = require('./models/VrstaSobe');
+
+      const postojecaRezervacija = await Rezervacija.findById(id);
+      if (!postojecaRezervacija) {
+        return res.status(404).json({ greška: 'Rezervacija nije pronađena u MongoDB bazi' });
+      }
+
+      if (guestName) {
+        const dijelovi = guestName.trim().split(' ');
+        const ime = dijelovi[0];
+        const prezime = dijelovi.slice(1).join(' ') || '';
+
+        await Gost.findByIdAndUpdate(postojecaRezervacija.id_gosta, {
+          ime: ime,
+          prezime: prezime
+        });
+      }
+
+      let noviIdSobe = postojecaRezervacija.id_sobe;
+      if (roomType) {
+        const vrstaSobe = await VrstaSobe.findOne({ naziv: roomType });
+        if (!vrstaSobe) {
+          return res.status(400).json({ greška: `Vrsta sobe '${roomType}' ne postoji` });
+        }
+
+        const slobodnaSoba = await Soba.findOne({ vrsta_sobe_id: vrstaSobe._id, status: 'Slobodna' });
+        if (!slobodnaSoba) {
+          return res.status(400).json({ greška: `Nema slobodnih soba tipa ${roomType}` });
+        }
+        noviIdSobe = slobodnaSoba._id;
+      }
+
+      const azuriranaRezervacija = await Rezervacija.findByIdAndUpdate(
+        id,
+        {
+          check_in: checkIn ? new Date(checkIn) : postojecaRezervacija.check_in,
+          check_out: checkOut ? new Date(checkOut) : postojecaRezervacija.check_out,
+          status: status === 'Confirmed' ? 'potvrdena' : 'Na čekanju',
+          id_sobe: noviIdSobe
+        },
+        { new: true }
+      );
+
+      return res.json(azuriranaRezervacija);
     }
+
   } catch (err) {
-    console.error(err.message);
+    console.error('Greška kod ažuriranja rezervacije:', err.message);
     res.status(500).send('Greška kod ažuriranja rezervacije');
   }
 });
@@ -438,7 +486,7 @@ app.get('/api/placanja', async (req, res) => {
 });
 
 app.get('/api/test-postgres', (req, res) => {
-    res.json({ poruka: "Pozdrav! Server radi i spreman je za PostgreSQL CRUD!" });
+    res.json({ poruka: "Pozdrav! Server radi i spreman je za CRUD!" });
 });
 
 app.listen(PORT, () => {

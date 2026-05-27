@@ -162,7 +162,7 @@ export default function App() {
         setBookings((prev) => [kompletnaRezervacija, ...(prev ?? [])]);
         setIsModalOpen(false); 
         resetForm(); 
-        alert("Rezervacija s kontakt podacima uspješno dodana u PostgreSQL!");
+        alert("Rezervacija s kontakt podacima uspješno dodana!");
       } else {
         alert("Greška prilikom spremanja rezervacije na backendu.");
       }
