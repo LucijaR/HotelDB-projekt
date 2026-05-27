@@ -168,7 +168,8 @@ export default function App() {
         resetForm(); 
         alert("Rezervacija s kontakt podacima uspješno dodana!");
       } else {
-        alert("Greška prilikom spremanja rezervacije na backendu.");
+        const data = await response.json();
+        alert(`Greška: ${data.greška || 'Nepoznata greška'}`);
       }
     } catch (error) {
       console.error("Greška pri dodavanju rezervacije:", error);
@@ -221,7 +222,8 @@ const handleSubmit = async (e: React.FormEvent) => {
       );
       alert("Rezervacija uspješno ažurirana!");
     } else {
-      alert("Greška pri ažuriranju.");
+      const data = await response.json();
+      alert(`Greška: ${data.greška || 'Nepoznata greška'}`);
     }
   } catch (error) {
     console.error(error);

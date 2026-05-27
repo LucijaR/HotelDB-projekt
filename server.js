@@ -10,7 +10,7 @@ app.use(express.json());
 const PORT = 5000;
 
 // PostgreSQL konekcija (čita postavke iz .env)
-/*const pool = new Pool({
+const pool = new Pool({
   user: process.env.PG_USER || process.env.PGUSER || 'postgres',
   host: process.env.PG_HOST || 'localhost',
   database: process.env.PG_DATABASE || process.env.PGDATABASE || 'postgres',
@@ -29,11 +29,11 @@ pool.connect((err, client, release) => {
     console.log('Uspješno spojeni na PostgreSQL bazu!');
     release();
 });
-*/
+
 // MongoDB konekcija
-mongoose.connect(process.env.MONGODB_URI)
+/*mongoose.connect(process.env.MONGODB_URI)
      .then(() => console.log('Uspješno spojeni na MongoDB bazu!'))
-     .catch(err => console.error('Greška pri spajanju na MongoDB bazu:', err));
+     .catch(err => console.error('Greška pri spajanju na MongoDB bazu:', err));*/
 
 // ==================== REZERVACIJE ====================
 
@@ -161,6 +161,18 @@ app.post('/api/rezervacije', async (req, res) => {
 
       const id_sobe = soba.rows[0].id_sobe;
 
+      const preklapanje = await pool.query(`
+        SELECT id_rezervacije FROM "Rezervacije"
+        WHERE id_sobe = $1
+        AND check_in < $2
+        AND check_out > $3
+        LIMIT 1
+      `, [id_sobe, checkOut, checkIn]);
+
+      if (preklapanje.rows.length > 0) {
+        return res.status(400).json({ greška: 'Soba nije slobodna u odabranom periodu' });
+      }
+
       const { rows } = await pool.query(`
         INSERT INTO "Rezervacije" (id_gosta, id_sobe, check_in, check_out, status)
         VALUES ($1, $2, $3, $4, $5)
@@ -203,6 +215,13 @@ app.post('/api/rezervacije', async (req, res) => {
         return res.status(400).json({ greška: `Nema slobodnih soba tipa ${roomType}` });
       }
 
+      const preklapanje = await Rezervacija.findOne({
+        id_sobe: soba._id,
+        $or: [{ check_in: { $lt: checkOutDate }, check_out: { $gt: checkInDate } }]
+      });
+      if (preklapanje) {
+        return res.status(400).json({ greška: 'Soba nije slobodna u odabranom periodu' });
+      }
       const rezervacija = await Rezervacija.create({
         id_gosta: gost._id,
         id_sobe: soba._id,
@@ -257,6 +276,19 @@ app.put('/api/rezervacije/:id', async (req, res) => {
 
       const id_sobe = soba.rows[0]?.id_sobe;
 
+      const preklapanje = await pool.query(`
+        SELECT id_rezervacije FROM "Rezervacije"
+        WHERE id_sobe = $1
+        AND id_rezervacije != $2
+        AND check_in < $3
+        AND check_out > $4
+        LIMIT 1
+      `, [id_sobe, id, checkOut, checkIn]);
+
+      if (preklapanje.rows.length > 0) {
+        return res.status(400).json({ greška: 'Soba nije slobodna u odabranom periodu' });
+      }
+
       const { rows } = await pool.query(`
         UPDATE "Rezervacije"
         SET check_in=$1, check_out=$2, status=$3, id_sobe=$4
@@ -301,6 +333,16 @@ app.put('/api/rezervacije/:id', async (req, res) => {
         }
         noviIdSobe = slobodnaSoba._id;
       }
+
+      const preklapanje = await Rezervacija.findOne({
+        id_sobe: noviIdSobe,
+        _id: { $ne: id },
+        $or: [{ check_in: { $lt: checkOutDate }, check_out: { $gt: checkInDate } }]
+      });
+      if (preklapanje) {
+        return res.status(400).json({ greška: 'Soba nije slobodna u odabranom periodu' });
+      }
+
 
       const azuriranaRezervacija = await Rezervacija.findByIdAndUpdate(
         id,
